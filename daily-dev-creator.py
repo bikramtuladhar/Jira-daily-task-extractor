@@ -4,6 +4,7 @@ from jira.exceptions import JIRAError
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import logging
+import pytz
 from tzlocal import get_localzone
 
 # Setup logging
@@ -27,10 +28,15 @@ START_DATE_FIELD_ID = "customfield_10014"  # Replace with your actual custom fie
 
 
 def fetch_previous_working_day():
-    tz = get_localzone()
-    now = datetime.now(tz)
+    # tz = get_localzone()
+    # now = datetime.now(tz)
+    now = datetime.now(pytz.timezone('Asia/Tokyo'))
     if now.weekday() == 0:  # Monday
         previous_working_day = now - timedelta(days=3)
+    elif now.weekday() == 6:  # Sunday
+        previous_working_day = now - timedelta(days=2)
+    elif now.weekday() == 5:  # Saturday
+        previous_working_day = now - timedelta(days=1)
     else:
         previous_working_day = now - timedelta(days=1)
 
@@ -164,7 +170,8 @@ def create_daily_work_log(activity_string):
                 "summary": sub_task_summary,
                 "description": activity_string,
                 "issuetype": {"name": "Sub-task"},
-                START_DATE_FIELD_ID: today_str
+                START_DATE_FIELD_ID: today_str,
+                "assignee": {"name": current_user}
             }
 
             sub_task = jira.create_issue(fields=sub_task_data)
