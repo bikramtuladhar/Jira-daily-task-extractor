@@ -170,11 +170,11 @@ def create_daily_work_log(activity_string):
                 "summary": sub_task_summary,
                 "description": activity_string,
                 "issuetype": {"name": "Sub-task"},
-                START_DATE_FIELD_ID: today_str,
-                "assignee": {"name": current_user}
+                START_DATE_FIELD_ID: today_str
             }
 
             sub_task = jira.create_issue(fields=sub_task_data)
+            jira.assign_issue(sub_task.key, current_user)
             logger.info(f"Created sub-task with key: {sub_task.key} under issue: {monthly_issue_key}")
 
     except JIRAError as e:
