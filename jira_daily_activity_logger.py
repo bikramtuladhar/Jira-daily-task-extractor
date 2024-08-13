@@ -28,17 +28,17 @@ START_DATE_FIELD_ID = "customfield_10014"  # Replace with your actual custom fie
 
 
 def fetch_previous_working_day():
-    # tz = get_localzone()
-    # now = datetime.now(tz)
-    now = datetime.now(pytz.timezone('Asia/Tokyo'))
-    if now.weekday() == 0:  # Monday
-        previous_working_day = now - timedelta(days=3)
-    elif now.weekday() == 6:  # Sunday
-        previous_working_day = now - timedelta(days=2)
-    elif now.weekday() == 5:  # Saturday
-        previous_working_day = now - timedelta(days=1)
+    tz = get_localzone()
+    now = datetime.now(tz)
+    now_utc = now.astimezone(datetime.timezone.utc)
+    if now_utc.weekday() == 0:  # Monday
+        previous_working_day = now_utc - timedelta(days=3)
+    elif now_utc.weekday() == 6:  # Sunday
+        previous_working_day = now_utc - timedelta(days=2)
+    elif now_utc.weekday() == 5:  # Saturday
+        previous_working_day = now_utc - timedelta(days=1)
     else:
-        previous_working_day = now - timedelta(days=1)
+        previous_working_day = now_utc - timedelta(days=1)
 
     start_of_day = previous_working_day.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = (start_of_day + timedelta(days=1)) - timedelta(seconds=1)
@@ -174,7 +174,7 @@ def create_daily_work_log(activity_string):
             }
 
             sub_task = jira.create_issue(fields=sub_task_data)
-            jira.assign_issue(sub_task.key, current_user)
+            jira.assign_issue(sub_task.key, current_user_display_name)
             logger.info(f"Created sub-task with key: {sub_task.key} under issue: {monthly_issue_key}")
 
     except JIRAError as e:
