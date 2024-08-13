@@ -30,7 +30,7 @@ START_DATE_FIELD_ID = "customfield_10014"  # Replace with your actual custom fie
 def fetch_previous_working_day():
     tz = get_localzone()
     now = datetime.now(tz)
-    now_utc = now.astimezone(datetime.timezone.utc)
+    now_utc = now.astimezone(pytz.timezone('UTC'))
     if now_utc.weekday() == 0:  # Monday
         previous_working_day = now_utc - timedelta(days=3)
     elif now_utc.weekday() == 6:  # Sunday
