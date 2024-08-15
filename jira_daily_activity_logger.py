@@ -27,33 +27,45 @@ jira = JIRA(server=jira_server, basic_auth=(username, api_token))
 START_DATE_FIELD_ID = "customfield_10014"  # Replace with your actual custom field ID
 
 
-def fetch_previous_working_day():
+def fetch_previous_working_day(custom_date=None):
     tz = get_localzone()
-    now = datetime.now(tz)
-    now_utc = now.astimezone(pytz.timezone('UTC'))
-    if now_utc.weekday() == 0:  # Monday
-        previous_working_day = now_utc - timedelta(days=3)
-    elif now_utc.weekday() == 6:  # Sunday
-        previous_working_day = now_utc - timedelta(days=2)
-    elif now_utc.weekday() == 5:  # Saturday
-        previous_working_day = now_utc - timedelta(days=1)
+    
+    if custom_date:
+        try:
+            now_utc = datetime.strptime(custom_date, '%Y-%m-%d').replace(tzinfo=pytz.UTC)
+        except ValueError:
+            logger.error(f"Invalid date format: {custom_date}. Please use 'YYYY-MM-DD'.")
+            return None, None
     else:
-        previous_working_day = now_utc - timedelta(days=1)
+        now = datetime.now(tz)
+        now_utc = now.astimezone(pytz.timezone('UTC'))
+        if now_utc.weekday() == 0:  # Monday
+            now_utc -= timedelta(days=3)
+        elif now_utc.weekday() == 6:  # Sunday
+            now_utc -= timedelta(days=2)
+        elif now_utc.weekday() == 5:  # Saturday
+            now_utc -= timedelta(days=1)
+        else:
+            now_utc -= timedelta(days=1)
 
-    start_of_day = previous_working_day.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = (start_of_day + timedelta(days=1)) - timedelta(seconds=1)
     return start_of_day, end_of_day
 
 
-def fetch_daily_activities():
+def fetch_daily_activities(custom_date=None):
     try:
-        start_of_day, end_of_day = fetch_previous_working_day()
+        start_of_day, end_of_day = fetch_previous_working_day(custom_date)
+
+        if not start_of_day or not end_of_day:
+            return None
 
         # Format dates to 'yyyy-MM-dd HH:mm'
         start_of_day_str = start_of_day.strftime('%Y-%m-%d %H:%M')
         end_of_day_str = end_of_day.strftime('%Y-%m-%d %H:%M')
         print(start_of_day_str, end_of_day_str)
-        # JQL query to fetch issues updated within the previous working day by the current user, excluding the DEV project
+
+        # JQL query to fetch issues updated within the specified day by the current user, excluding the DEV project
         jql_query = f'updated >= "{start_of_day_str}" AND updated < "{end_of_day_str}" AND assignee = currentUser() AND project != DEV ORDER BY updated DESC'
         issues = jira.search_issues(jql_query, expand='changelog', maxResults=100)
 
@@ -65,9 +77,16 @@ def fetch_daily_activities():
             issue_summary = issue.fields.summary
             issue_link = f"{jira_server}/browse/{issue_key}"
             original_estimate = issue.fields.timeoriginalestimate
-            time_spent = issue.fields.timespent
             created = issue.fields.created.split("T")[0]
             updated = issue.fields.updated.split("T")[0]
+
+            # Fetch worklog entries for this issue
+            worklogs = jira.worklogs(issue_key)
+            worklog_time_total = 0
+            for worklog in worklogs:
+                worklog_date = datetime.strptime(worklog.started, '%Y-%m-%dT%H:%M:%S.%f%z').astimezone(pytz.timezone('UTC'))
+                if start_of_day <= worklog_date <= end_of_day:
+                    worklog_time_total += worklog.timeSpentSeconds
 
             # Fetch issue comments
             comments = jira.comments(issue)
@@ -80,14 +99,28 @@ def fetch_daily_activities():
                 if comment.created > start_of_day_str and comment.body
             ]
 
+            # Fetch status changes from changelog
+            status_changes = []
+            for history in issue.changelog.histories:
+                for item in history.items:
+                    if item.field == 'status':
+                        status_change_time = datetime.strptime(history.created, '%Y-%m-%dT%H:%M:%S.%f%z').astimezone(pytz.timezone('UTC'))
+                        if start_of_day <= status_change_time <= end_of_day:
+                            status_changes.append({
+                                "from": item.fromString,
+                                "to": item.toString,
+                                "date": status_change_time.strftime('%Y-%m-%d %H:%M')
+                            })
+
             # Add issue details to activity list
             activity_list.append({
                 'issue_key': issue_key,
                 'issue_summary': issue_summary,
                 'issue_link': issue_link,
                 'original_estimate': original_estimate,
-                'time_spent': time_spent,
+                'time_spent': worklog_time_total,  # Update to use worklog time
                 'comments': comment_texts,
+                'status_changes': status_changes,
                 'created': created,
                 'updated': updated,
             })
@@ -192,8 +225,12 @@ def format_time(seconds):
 
 
 if __name__ == "__main__":
+    # Optionally, you can pass a custom date as an argument. Example: '2024-08-14'
+    custom_date = input("Enter the date (YYYY-MM-DD) to fetch activities for (leave empty for previous working day): ")
+    custom_date = custom_date.strip() if custom_date else None
+
     # Fetch daily activities
-    daily_activities = fetch_daily_activities()
+    daily_activities = fetch_daily_activities(custom_date)
     if daily_activities:
         activity_string = ""
         total_original_estimate = 0
@@ -213,14 +250,20 @@ if __name__ == "__main__":
                 f"*Original Estimate*: {formatted_original_estimate}\n"
                 f"*Created*: {activity['created']}\n"
                 f"*Updated*: {activity['updated']}\n"
-                f"*Time Spent*: {formatted_time_spent}\n\n"
-                f"{'*Comments:*' if len(activity['comments']) > 0 else ''}\n"
-                f"{'-' * len(activity['comments'][0]['body']) if len(activity['comments']) > 0 else ''}\n"
+                f"*Time Spent*: {formatted_time_spent}\n"
             )
-            for comment in activity['comments']:
-                activity_string += f"* {comment['body']}\n"
-                activity_string += f"date: {comment['created']}\n"
-                activity_string += f"{'-' * len(comment['body'])}\n"
+            
+            # Add status change information
+            if activity['status_changes']:
+                activity_string += "\n*Status Changes:*\n"
+                for change in activity['status_changes']:
+                    activity_string += f" - From '{change['from']}' to '{change['to']}' on {change['date']}\n"
+
+            if len(activity['comments']) > 0:
+                activity_string += "\n*Comments:*\n"
+                for comment in activity['comments']:
+                    activity_string += f"* {comment['body']} (on {comment['created']})\n"
+
             activity_string += "{panel}\n\n----\n\n"
 
         # Add total time spent and total original estimated time
@@ -236,4 +279,4 @@ if __name__ == "__main__":
         # Create daily work log
         create_daily_work_log(activity_string)
     else:
-        logger.info("No activities found for today or an error occurred.")
+        logger.info("No activities found for the specified date or an error occurred.")
