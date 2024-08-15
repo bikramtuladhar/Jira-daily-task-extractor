@@ -77,7 +77,7 @@ def fetch_comments_for_issue(issue, start_of_day_str):
     Fetches the comments for the given issue made after the start of the day.
     """
     return [
-        {"body": comment.body, "created": comment.created.astimezone(local_tz).strftime('%Y-%m-%d %H:%M')}
+        {"body": comment.body, "created": datetime.strptime(comment.created,'%Y-%m-%dT%H:%M:%S.%f%z').astimezone(local_tz).strftime('%Y-%m-%d %H:%M')}
         for comment in jira.comments(issue)
         if comment.created > start_of_day_str and comment.body
     ]
