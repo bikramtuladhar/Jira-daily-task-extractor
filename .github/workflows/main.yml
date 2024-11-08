@@ -1,0 +1,19 @@
+name: Execute whoami on Remote Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  execute-whoami:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+      
+      - name: Execute whoami on remote server
+        env:
+          USERNAME: bikramtuladhar
+          PASSWORD: 11111111
+          HOST: 198.19.249.19
+        run: |
+          sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USERNAME@$HOST" ip a
