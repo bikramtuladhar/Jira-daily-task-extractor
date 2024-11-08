@@ -6,6 +6,7 @@ on:
 jobs:
   execute-whoami:
     runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
